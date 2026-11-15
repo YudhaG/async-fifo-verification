@@ -1,0 +1,65 @@
+name: regression
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  # Full testbench across depths and clock-frequency ratios.
+  sim:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - { asize: 2, dsize: 8,  wclk: 10, rclk: 17, label: "depth4 w10-r17" }
+          - { asize: 4, dsize: 8,  wclk: 10, rclk: 37, label: "depth16 fast-write" }
+          - { asize: 4, dsize: 8,  wclk: 37, rclk: 10, label: "depth16 fast-read" }
+          - { asize: 6, dsize: 32, wclk: 10, rclk: 10, label: "depth64 equal-clocks" }
+    name: sim (${{ matrix.config.label }})
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install Icarus Verilog
+        run: sudo apt-get update && sudo apt-get install -y iverilog
+
+      - name: Install cocotb
+        run: pip install -r requirements.txt
+
+      - name: Run regression
+        run: >
+          make ASIZE=${{ matrix.config.asize }} DSIZE=${{ matrix.config.dsize }}
+          WCLK_NS=${{ matrix.config.wclk }} RCLK_NS=${{ matrix.config.rclk }}
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: results-asize${{ matrix.config.asize }}-w${{ matrix.config.wclk }}-r${{ matrix.config.rclk }}
+          path: results.xml
+
+  # Inject bugs into the RTL and make sure the testbench catches every one.
+  mutation:
+    runs-on: ubuntu-24.04
+    name: mutation check
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install Icarus Verilog
+        run: sudo apt-get update && sudo apt-get install -y iverilog
+
+      - name: Install cocotb
+        run: pip install -r requirements.txt
+
+      - name: Run mutation check
+        run: ./scripts/mutation_check.sh
